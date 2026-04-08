@@ -1,7 +1,7 @@
 const CACHE_NAME = "gemma-model-cache-v1";
 
 // 你需要快取的模型 URL 關鍵字 (必須與 index.html 中的 MODEL_URL 匹配)
-const MODEL_FILE_EXTENSION = ".bin"; // 或者是 '.task'
+const MODEL_FILE_EXTENSION = ".task";
 
 self.addEventListener("install", (event) => {
   // 立即激活新的 Service Worker

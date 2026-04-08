@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-HK">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gemma 4 E2B 本地網頁推理 (PoC)</title>
+    <style>
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f4f4f9;
+      }
+      #chat-box {
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        height: 400px;
+        overflow-y: auto;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 15px;
+      }
+      .message {
+        margin-bottom: 15px;
+        padding: 10px;
+        border-radius: 8px;
+      }
+      .user {
+        background: #007aff;
+        color: white;
+        text-align: right;
+        margin-left: 20%;
+      }
+      .ai {
+        background: #e5e5ea;
+        color: black;
+        margin-right: 20%;
+      }
+      .controls {
+        display: flex;
+        gap: 10px;
+      }
+      input[type="text"] {
+        flex: 1;
+        padding: 12px;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        font-size: 16px;
+      }
+      button {
+        padding: 12px 24px;
+        background: #28cd41;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 16px;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      #status {
+        font-size: 0.9em;
+        color: #666;
+        margin-bottom: 10px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <h2 style="text-align: center">學校專用 AI Assistant (Local-First)</h2>
+    <div id="status">準備中：正在註冊 Service Worker...</div>
+
+    <div id="chat-box"></div>
+
+    <div class="controls">
+      <input type="text" id="prompt" placeholder="輸入問題..." disabled />
+      <button id="send-btn" disabled>發送</button>
+    </div>
+
+    <!-- 引入 Google MediaPipe LLM Inference 模組 -->
+    <script type="module">
+      import {
+        FilesetResolver,
+        LlmInference,
+      } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai";
+
+      const statusEl = document.getElementById("status");
+      const chatBox = document.getElementById("chat-box");
+      const promptInput = document.getElementById("prompt");
+      const sendBtn = document.getElementById("send-btn");
+      let llmInference;
+
+      // 替換為你的 Gemma 4 E2B INT4 .task 或 .bin 檔案的實際託管網址
+      // 這裡暫時使用 Google 官方提供作測試用的 Gemma 2B INT4 模型連結作示範
+      // 讓瀏覽器直接讀取這個 7GB 的本地檔案
+      const MODEL_URL = "gemma-4-e2b.gguf";
+
+      // 1. 註冊 Service Worker (負責快取模型)
+      async function registerServiceWorker() {
+        if ("serviceWorker" in navigator) {
+          try {
+            const registration =
+              await navigator.serviceWorker.register("sw.js");
+            console.log("Service Worker 註冊成功:", registration.scope);
+            statusEl.innerText =
+              "Service Worker 運作中。正在載入 AI 模型（首次需下載約 2GB，請耐心等候）...";
+          } catch (error) {
+            console.error("Service Worker 註冊失敗:", error);
+            statusEl.innerText = "Service Worker 註冊失敗，模型將不會被快取。";
+          }
+        } else {
+          statusEl.innerText = "你的瀏覽器不支援 Service Worker。";
+        }
+      }
+
+      // 2. 初始化 MediaPipe LLM Inference 引擎
+      async function initModel() {
+        try {
+          // 載入 WebAssembly 核心
+          const genaiWasm = await FilesetResolver.forGenAiTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai/wasm",
+          );
+
+          // 建立推論實例 (這一步會觸發 fetch 下載模型，並被 sw.js 攔截)
+          llmInference = await LlmInference.createFromOptions(genaiWasm, {
+            baseOptions: { modelAssetPath: MODEL_URL },
+            maxTokens: 1024,
+            topK: 40,
+            temperature: 0.8,
+            randomSeed: 101,
+          });
+
+          statusEl.innerText = "✅ 模型已準備就緒，所有運算皆在本地進行！";
+          promptInput.disabled = false;
+          sendBtn.disabled = false;
+        } catch (error) {
+          console.error("模型載入失敗:", error);
+          statusEl.innerText =
+            "❌ 模型載入失敗，請檢查瀏覽器是否支援 WebGPU 或儲存空間是否足夠。";
+        }
+      }
+
+      // 3. 處理對話邏輯
+      async function handleSend() {
+        const text = promptInput.value.trim();
+        if (!text) return;
+
+        appendMessage("user", text);
+        promptInput.value = "";
+        promptInput.disabled = true;
+        sendBtn.disabled = true;
+
+        const aiMsgEl = appendMessage("ai", "思考中...");
+
+        try {
+          // 生成回覆
+          const response = await llmInference.generateResponse(text);
+          aiMsgEl.innerText = response;
+        } catch (error) {
+          aiMsgEl.innerText = "發生錯誤：" + error.message;
+        }
+
+        promptInput.disabled = false;
+        sendBtn.disabled = false;
+        promptInput.focus();
+      }
+
+      function appendMessage(sender, text) {
+        const div = document.createElement("div");
+        div.className = `message ${sender}`;
+        div.innerText = text;
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+        return div;
+      }
+
+      sendBtn.addEventListener("click", handleSend);
+      promptInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") handleSend();
+      });
+
+      // 啟動流程
+      await registerServiceWorker();
+      await initModel();
+    </script>
+  </body>
+</html>

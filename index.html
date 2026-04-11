@@ -296,6 +296,7 @@
       // const MODEL_URL = "gemma-4-E2B-it-web.task";
       const MODEL_URL =
         "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.task";
+
       const CACHE_NAME = "gemma-model-cache-v1";
       let llmInference = null;
 
@@ -461,43 +462,47 @@
         const startTime = performance.now();
 
         try {
-          await llmInference.generateResponse(text, (partial, done) => {
-            // Detect <think>…</think> blocks
-            const combined = (textEl.textContent || "") + partial;
+          const formattedPrompt = `<|turn>user\n${text}<turn|>\n<|turn>model\n`;
+          await llmInference.generateResponse(
+            formattedPrompt,
+            (partial, done) => {
+              // Detect <tool_call>…<tool_call> blocks
+              const combined = (textEl.textContent || "") + partial;
 
-            if (!inThink && partial.includes("<think>")) {
-              inThink = true;
-              thinkEl.classList.remove("hidden");
-            }
-            if (inThink) {
-              thinkTokens += partial;
-              const endIdx = thinkTokens.indexOf("</think>");
-              if (endIdx !== -1) {
-                thinkEl.textContent =
-                  "💭 " +
-                  thinkTokens
-                    .slice(thinkTokens.indexOf("<think>") + 7, endIdx)
-                    .trim();
-                textEl.textContent = thinkTokens.slice(endIdx + 8);
-                inThink = false;
-              } else {
-                thinkEl.textContent =
-                  "💭 " + thinkTokens.replace("<think>", "").trim();
+              if (!inThink && partial.includes("<think>")) {
+                inThink = true;
+                thinkEl.classList.remove("hidden");
               }
-            } else {
-              textEl.textContent += partial;
-            }
+              if (inThink) {
+                thinkTokens += partial;
+                const endIdx = thinkTokens.indexOf("</think>");
+                if (endIdx !== -1) {
+                  thinkEl.textContent =
+                    "💭 " +
+                    thinkTokens
+                      .slice(thinkTokens.indexOf("<think>") + 7, endIdx)
+                      .trim();
+                  textEl.textContent = thinkTokens.slice(endIdx + 8);
+                  inThink = false;
+                } else {
+                  thinkEl.textContent =
+                    "💭 " + thinkTokens.replace("<think>", "").trim();
+                }
+              } else {
+                textEl.textContent += partial;
+              }
 
-            tokenCount++;
-            chatBox.scrollTop = chatBox.scrollHeight;
+              tokenCount++;
+              chatBox.scrollTop = chatBox.scrollHeight;
 
-            if (done) {
-              const elapsed = (performance.now() - startTime) / 1000;
-              const tps = (tokenCount / elapsed).toFixed(1);
-              tpsValue.textContent = tps;
-              tpsBar.classList.remove("hidden");
-            }
-          });
+              if (done) {
+                const elapsed = (performance.now() - startTime) / 1000;
+                const tps = (tokenCount / elapsed).toFixed(1);
+                tpsValue.textContent = tps;
+                tpsBar.classList.remove("hidden");
+              }
+            },
+          );
         } catch (error) {
           textEl.textContent = "發生錯誤：" + error.message;
         }

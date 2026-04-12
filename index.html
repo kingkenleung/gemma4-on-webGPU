@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-HK">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gemma 4 E2B 本地網頁推理 (PoC)</title>
+    <title>Gemma 4 E2B — Edge AI Inference</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -16,373 +16,426 @@
         },
       };
     </script>
+    <style>
+      .param-dirty { opacity: 0.5; pointer-events: none; }
+      #apply-banner { transition: all 0.2s; }
+      .thinking-block { background: #f8fafc; border-left: 3px solid #818cf8; padding: 6px 10px; border-radius: 4px; margin-bottom: 6px; font-size: 11px; color: #64748b; font-style: italic; }
+      .progress-bar-inner { transition: width 0.3s ease; }
+      textarea:disabled { background-color: #f8fafc; cursor: not-allowed; }
+    </style>
   </head>
   <body class="bg-slate-100 min-h-screen flex flex-col items-center py-8 px-4">
+
     <!-- Header -->
-    <div class="w-full max-w-3xl mb-4">
-      <h1 class="text-2xl font-bold text-slate-800 text-center">
-        🧠 學校專用 AI Assistant
-      </h1>
-      <p class="text-center text-slate-500 text-sm mt-1">
-        Local-First · 所有運算在瀏覽器本地進行
-      </p>
+    <div class="w-full max-w-4xl mb-4">
+      <div class="flex items-center justify-center gap-3 mb-1">
+        <span class="text-3xl">🧠</span>
+        <div>
+          <h1 class="text-2xl font-bold text-slate-800">Gemma 4 E2B — Edge AI</h1>
+          <p class="text-xs text-slate-400 mt-0.5">Gemma 4 E2B 邊緣 AI 推理示範</p>
+        </div>
+      </div>
+
+      <!-- Model info card -->
+      <div class="mt-3 bg-white rounded-xl shadow-sm border border-slate-200 p-4 max-w-4xl mx-auto">
+        <div class="flex flex-wrap gap-4 items-start">
+          <div class="flex-1 min-w-[200px]">
+            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Model 模型</p>
+            <p class="text-sm font-bold text-slate-800">Gemma 4 E2B Instruct</p>
+            <p class="text-xs text-slate-500">2B parameters · INT4 quantized · ~2.6 GB</p>
+            <p class="text-xs text-slate-400 mt-0.5">20億參數 · INT4量化 · 約2.6GB大小</p>
+          </div>
+          <div class="flex-1 min-w-[200px]">
+            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Runtime 執行環境</p>
+            <p class="text-sm font-bold text-slate-800">WebGPU · MediaPipe</p>
+            <p class="text-xs text-slate-500">Runs entirely in your browser — no server needed</p>
+            <p class="text-xs text-slate-400 mt-0.5">完全在瀏覽器本地執行，無需伺服器</p>
+          </div>
+          <div class="flex-1 min-w-[220px]">
+            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">What is Edge AI? 什麼是邊緣AI？</p>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              <span class="font-semibold text-indigo-600">Cloud AI</span> (e.g. ChatGPT) — runs on remote servers; needs internet.<br>
+              <span class="font-semibold text-emerald-600">Edge AI</span> — runs <em>directly on your device</em>; works offline, fully private.<br>
+              <span class="font-semibold text-amber-600">Local AI</span> (e.g. Ollama) — runs on your PC but requires installation.
+            </p>
+            <p class="text-xs text-slate-400 mt-1">邊緣AI在你的設備上直接運行，無需上傳數據，保護隱私。</p>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Status bar -->
-    <div
-      id="status-bar"
-      class="w-full max-w-3xl mb-4 flex items-center gap-3 bg-white rounded-xl px-4 py-3 shadow-sm border border-slate-200"
-    >
-      <span
-        id="status-dot"
-        class="inline-block w-3 h-3 rounded-full bg-yellow-400 flex-shrink-0"
-      ></span>
-      <span id="status-text" class="text-sm text-slate-600"
-        >準備中：正在註冊 Service Worker...</span
-      >
-      <span
-        id="cache-badge"
-        class="ml-auto hidden text-xs font-medium px-2 py-0.5 rounded-full"
-      ></span>
+    <div id="status-bar" class="w-full max-w-4xl mb-3 flex items-center gap-3 bg-white rounded-xl px-4 py-3 shadow-sm border border-slate-200">
+      <span id="status-dot" class="inline-block w-3 h-3 rounded-full bg-yellow-400 animate-pulse flex-shrink-0"></span>
+      <span id="status-text" class="text-sm text-slate-600">Initialising… 正在初始化 Service Worker…</span>
+      <span id="cache-badge" class="ml-auto hidden text-xs font-medium px-2 py-0.5 rounded-full"></span>
     </div>
 
-    <div class="w-full max-w-3xl flex gap-4">
+    <!-- Download progress -->
+    <div id="download-section" class="w-full max-w-4xl mb-3 hidden">
+      <div class="bg-white rounded-xl shadow-sm border border-amber-200 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <div>
+            <p class="text-sm font-semibold text-slate-700">Downloading Model… 正在下載模型…</p>
+            <p class="text-xs text-slate-400">This model is ~2.6 GB. Please be patient. 模型約2.6GB，請耐心等待。</p>
+          </div>
+          <span id="dl-percent" class="text-sm font-bold text-brand">0%</span>
+        </div>
+        <div class="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+          <div id="dl-bar" class="progress-bar-inner h-3 bg-indigo-500 rounded-full" style="width:0%"></div>
+        </div>
+        <p id="dl-detail" class="text-xs text-slate-400 mt-1">0 MB / — MB</p>
+        <div class="mt-2 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          <span class="text-base">⚠️</span>
+          <p class="text-xs text-amber-700">
+            <span class="font-semibold">Smartphone users:</span> This 2.6 GB model may crash or freeze on mobile devices with limited RAM. A desktop or laptop is recommended.
+            <br><span class="text-amber-600">手機用戶注意：此模型約2.6GB，記憶體不足的手機可能會當機，建議使用電腦。</span>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="w-full max-w-4xl flex gap-4">
       <!-- Left: Chat + Input -->
-      <div class="flex-1 flex flex-col gap-3">
+      <div class="flex-1 flex flex-col gap-3 min-w-0">
+
         <!-- Chat box -->
-        <div
-          id="chat-box"
-          class="bg-white rounded-xl shadow-sm border border-slate-200 h-96 overflow-y-auto p-4 flex flex-col gap-3"
-        ></div>
+        <div id="chat-box" class="bg-white rounded-xl shadow-sm border border-slate-200 h-[420px] overflow-y-auto p-4 flex flex-col gap-3"></div>
 
         <!-- Token/s indicator -->
         <div id="tps-bar" class="hidden text-xs text-slate-400 text-right pr-1">
           ⚡ <span id="tps-value">—</span> tokens/s
         </div>
 
+        <!-- System prompt -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-3">
+          <div class="flex items-center justify-between mb-1">
+            <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">System Prompt <span class="normal-case font-normal text-slate-400">系統提示詞</span></label>
+            <div class="flex gap-2">
+              <select id="sys-prompt-select" class="text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-600 focus:outline-none">
+                <option value="">— Load saved 載入已儲存 —</option>
+              </select>
+              <button id="save-sys-btn" class="text-xs px-2 py-1 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">Save 儲存</button>
+              <button id="del-sys-btn" class="text-xs px-2 py-1 bg-red-50 text-red-500 border border-red-200 rounded-lg hover:bg-red-100 transition-colors">Delete 刪除</button>
+            </div>
+          </div>
+          <textarea id="sys-prompt" rows="2"
+            placeholder="Optional: Set a system prompt to guide the AI's behaviour. E.g. 'You are a helpful assistant.' &#10;可選：設定系統提示詞來引導AI的行為。"
+            class="w-full resize-none rounded-lg px-3 py-2 text-xs text-slate-700 border border-slate-200 placeholder-slate-300 focus:outline-none focus:border-brand"></textarea>
+        </div>
+
         <!-- Multiline input -->
-        <div
-          class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col"
-        >
-          <textarea
-            id="prompt"
-            rows="3"
-            placeholder="輸入問題… (Shift+Enter 換行，Enter 發送)"
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col">
+          <textarea id="prompt" rows="3"
+            placeholder="Type your message… (Enter to send, Shift+Enter for new line) &#10;輸入訊息…（Enter 發送，Shift+Enter 換行）"
             disabled
-            class="w-full resize-none rounded-t-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none disabled:bg-slate-50 disabled:cursor-not-allowed"
-          ></textarea>
-          <div class="flex justify-end px-3 pb-3 pt-1">
-            <button
-              id="send-btn"
-              disabled
-              class="px-5 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-dark disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
-            >
-              發送
+            class="w-full resize-none rounded-t-xl px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none disabled:bg-slate-50 disabled:cursor-not-allowed"></textarea>
+          <div class="flex justify-between items-center px-3 pb-3 pt-1 gap-2">
+            <button id="reset-btn"
+              class="px-4 py-2 text-sm font-medium text-slate-500 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+              🗑 Reset 重置
             </button>
+            <div class="flex gap-2">
+              <button id="regen-btn" disabled
+                class="px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                🔄 Regenerate 重新生成
+              </button>
+              <button id="send-btn" disabled
+                class="px-5 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:bg-brand-dark disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors">
+                Send 發送
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- Right: Settings panel -->
       <div class="w-64 flex-shrink-0 flex flex-col gap-3">
-        <!-- Model cache status card -->
+
+        <!-- Model cache status -->
         <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-          <h2
-            class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3"
-          >
-            模型快取狀態
-          </h2>
-          <div id="cache-status-detail" class="text-sm text-slate-500 italic">
-            檢查中...
-          </div>
+          <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Model Cache 模型快取</h2>
+          <div id="cache-status-detail" class="text-sm text-slate-500 italic">Checking… 檢查中…</div>
         </div>
 
         <!-- Parameters card -->
-        <div
-          class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col gap-4"
-        >
-          <h2
-            class="text-xs font-semibold text-slate-500 uppercase tracking-wide"
-          >
-            推理參數
-          </h2>
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Inference Params 推理參數</h2>
+          </div>
+
+          <!-- Apply banner (shown when params dirty) -->
+          <div id="apply-banner" class="hidden bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 text-xs text-amber-700">
+            ⚠ Parameters changed. Click <strong>Apply</strong> to reload model.<br>
+            <span class="text-amber-600">參數已變更，請點擊「套用」重新載入模型。</span>
+          </div>
 
           <!-- Max Tokens -->
           <div>
             <div class="flex justify-between items-center mb-1">
-              <label
-                class="text-xs font-medium text-slate-700 flex items-center gap-1"
-              >
+              <label class="text-xs font-medium text-slate-700 flex items-center gap-1">
                 Max Tokens
-                <span
-                  class="cursor-help text-slate-400"
-                  title="模型單次回覆最多可生成的 token 數量。數值越大，回覆可以越長，但速度也越慢。"
-                  >ⓘ</span
-                >
+                <span class="cursor-help text-slate-400" title="Maximum tokens the model can generate per reply. More = longer response but slower. 模型單次回覆最多可生成的token數量。">ⓘ</span>
               </label>
-              <span id="maxTokens-val" class="text-xs text-brand font-mono"
-                >8192</span
-              >
+              <span id="maxTokens-val" class="text-xs text-brand font-mono">8192</span>
             </div>
-            <input
-              type="range"
-              id="maxTokens"
-              min="64"
-              max="12288"
-              step="64"
-              value="8192"
-              class="w-full accent-brand"
-            />
-            <div class="flex justify-between text-[10px] text-slate-400 mt-0.5">
-              <span>64</span><span>12288</span>
-            </div>
+            <input type="range" id="maxTokens" min="64" max="12288" step="64" value="8192" class="w-full accent-brand" />
+            <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>64</span><span>12288</span></div>
           </div>
 
           <!-- Top-K -->
           <div>
             <div class="flex justify-between items-center mb-1">
-              <label
-                class="text-xs font-medium text-slate-700 flex items-center gap-1"
-              >
+              <label class="text-xs font-medium text-slate-700 flex items-center gap-1">
                 Top-K
-                <span
-                  class="cursor-help text-slate-400"
-                  title="每步只從機率最高的 K 個 token 中取樣。K 越小，回覆越保守集中；K 越大，回覆越多樣。"
-                  >ⓘ</span
-                >
+                <span class="cursor-help text-slate-400" title="Sample from the top K most likely tokens. Lower = more conservative. 每步只從機率最高的K個token中取樣。">ⓘ</span>
               </label>
               <span id="topK-val" class="text-xs text-brand font-mono">40</span>
             </div>
-            <input
-              type="range"
-              id="topK"
-              min="1"
-              max="100"
-              step="1"
-              value="40"
-              class="w-full accent-brand"
-            />
-            <div class="flex justify-between text-[10px] text-slate-400 mt-0.5">
-              <span>1</span><span>100</span>
-            </div>
+            <input type="range" id="topK" min="1" max="100" step="1" value="40" class="w-full accent-brand" />
+            <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>1</span><span>100</span></div>
           </div>
 
           <!-- Top-P -->
           <div>
             <div class="flex justify-between items-center mb-1">
-              <label
-                class="text-xs font-medium text-slate-700 flex items-center gap-1"
-              >
+              <label class="text-xs font-medium text-slate-700 flex items-center gap-1">
                 Top-P
-                <span
-                  class="cursor-help text-slate-400"
-                  title="Nucleus Sampling：只從累積機率達到 P 的最小 token 集合中取樣。P=1 表示不限制；P=0.9 表示只考慮最可能的 90% token。"
-                  >ⓘ</span
-                >
+                <span class="cursor-help text-slate-400" title="Nucleus sampling — only consider tokens summing to probability P. P=1 means no restriction. Nucleus取樣：只考慮累積機率達到P的token集合。">ⓘ</span>
               </label>
-              <span id="topP-val" class="text-xs text-brand font-mono"
-                >0.95</span
-              >
+              <span id="topP-val" class="text-xs text-brand font-mono">0.95</span>
             </div>
-            <input
-              type="range"
-              id="topP"
-              min="0.1"
-              max="1.0"
-              step="0.05"
-              value="0.95"
-              class="w-full accent-brand"
-            />
-            <div class="flex justify-between text-[10px] text-slate-400 mt-0.5">
-              <span>0.1</span><span>1.0</span>
-            </div>
+            <input type="range" id="topP" min="0.1" max="1.0" step="0.05" value="0.95" class="w-full accent-brand" />
+            <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>0.1</span><span>1.0</span></div>
           </div>
 
           <!-- Temperature -->
           <div>
             <div class="flex justify-between items-center mb-1">
-              <label
-                class="text-xs font-medium text-slate-700 flex items-center gap-1"
-              >
+              <label class="text-xs font-medium text-slate-700 flex items-center gap-1">
                 Temperature
-                <span
-                  class="cursor-help text-slate-400"
-                  title="控制回覆的「創意度」。接近 0 時回覆非常確定、重複；接近 2 時回覆更隨機、富創意。一般建議 0.7–1.0。"
-                  >ⓘ</span
-                >
+                <span class="cursor-help text-slate-400" title="Controls creativity. Near 0 = deterministic; near 2 = very random. 控制創意度：接近0時回覆很確定；接近2時非常隨機。">ⓘ</span>
               </label>
-              <span id="temperature-val" class="text-xs text-brand font-mono"
-                >0.8</span
-              >
+              <span id="temperature-val" class="text-xs text-brand font-mono">0.8</span>
             </div>
-            <input
-              type="range"
-              id="temperature"
-              min="0.0"
-              max="2.0"
-              step="0.05"
-              value="0.8"
-              class="w-full accent-brand"
-            />
-            <div class="flex justify-between text-[10px] text-slate-400 mt-0.5">
-              <span>0</span><span>2</span>
-            </div>
+            <input type="range" id="temperature" min="0.0" max="2.0" step="0.05" value="0.8" class="w-full accent-brand" />
+            <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>0</span><span>2</span></div>
           </div>
 
           <!-- Thinking budget -->
           <div>
             <div class="flex justify-between items-center mb-1">
-              <label
-                class="text-xs font-medium text-slate-700 flex items-center gap-1"
-              >
+              <label class="text-xs font-medium text-slate-700 flex items-center gap-1">
                 Thinking Budget
-                <span
-                  class="cursor-help text-slate-400"
-                  title="Gemma 4 的「思考」token 預算。模型在正式回覆前會先進行內部推理，數值越大思考越深入，但耗時更長。設為 0 可停用思考。"
-                  >ⓘ</span
-                >
+                <span class="cursor-help text-slate-400" title="Internal reasoning token budget before the reply. 0 = disabled. Gemma 4的思考token預算，0表示停用思考。">ⓘ</span>
               </label>
-              <span id="thinking-val" class="text-xs text-brand font-mono"
-                >0</span
-              >
+              <span id="thinking-val" class="text-xs text-brand font-mono">0</span>
             </div>
-            <input
-              type="range"
-              id="thinking"
-              min="0"
-              max="2048"
-              step="64"
-              value="0"
-              class="w-full accent-brand"
-            />
-            <div class="flex justify-between text-[10px] text-slate-400 mt-0.5">
-              <span>停用</span><span>2048</span>
-            </div>
+            <input type="range" id="thinking" min="0" max="2048" step="64" value="0" class="w-full accent-brand" />
+            <div class="flex justify-between text-[10px] text-slate-400 mt-0.5"><span>Off 停用</span><span>2048</span></div>
           </div>
 
-          <!-- Reload model button -->
-          <button
-            id="reload-btn"
-            class="w-full mt-1 py-2 text-xs font-medium text-white bg-brand rounded-lg hover:bg-brand-dark disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
-            disabled
-          >
-            套用並重新載入模型
+          <!-- Apply button -->
+          <button id="reload-btn" disabled
+            class="w-full mt-1 py-2 text-xs font-medium text-white bg-brand rounded-lg hover:bg-brand-dark disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors">
+            Apply & Reload Model 套用並重新載入模型
           </button>
         </div>
       </div>
     </div>
 
     <script type="module">
-      import {
-        FilesetResolver,
-        LlmInference,
-      } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai";
+      import { FilesetResolver, LlmInference } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai";
 
       // ── DOM refs ──────────────────────────────────────────────────────────
-      const statusDot = document.getElementById("status-dot");
-      const statusText = document.getElementById("status-text");
-      const cacheBadge = document.getElementById("cache-badge");
-      const cacheDetail = document.getElementById("cache-status-detail");
-      const chatBox = document.getElementById("chat-box");
-      const promptInput = document.getElementById("prompt");
-      const sendBtn = document.getElementById("send-btn");
-      const tpsBar = document.getElementById("tps-bar");
-      const tpsValue = document.getElementById("tps-value");
-      const reloadBtn = document.getElementById("reload-btn");
+      const statusDot      = document.getElementById("status-dot");
+      const statusText     = document.getElementById("status-text");
+      const cacheBadge     = document.getElementById("cache-badge");
+      const cacheDetail    = document.getElementById("cache-status-detail");
+      const chatBox        = document.getElementById("chat-box");
+      const promptInput    = document.getElementById("prompt");
+      const sendBtn        = document.getElementById("send-btn");
+      const regenBtn       = document.getElementById("regen-btn");
+      const resetBtn       = document.getElementById("reset-btn");
+      const tpsBar         = document.getElementById("tps-bar");
+      const tpsValue       = document.getElementById("tps-value");
+      const reloadBtn      = document.getElementById("reload-btn");
+      const applyBanner    = document.getElementById("apply-banner");
+      const dlSection      = document.getElementById("download-section");
+      const dlBar          = document.getElementById("dl-bar");
+      const dlPercent      = document.getElementById("dl-percent");
+      const dlDetail       = document.getElementById("dl-detail");
+      const sysPromptEl    = document.getElementById("sys-prompt");
+      const sysSelect      = document.getElementById("sys-prompt-select");
+      const saveSysBtn     = document.getElementById("save-sys-btn");
+      const delSysBtn      = document.getElementById("del-sys-btn");
 
       const sliders = ["maxTokens", "topK", "topP", "temperature", "thinking"];
 
-      // ── Model ─────────────────────────────────────────────────────────────
-      // const MODEL_URL = "gemma-4-E2B-it-web.task";
-      const MODEL_URL =
-        "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.task";
+      // ── State ──────────────────────────────────────────────────────────────
+      const MODEL_URL   = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.task";
+      const CACHE_NAME  = "gemma-model-cache-v1";
+      const SYS_STORAGE = "gemma_system_prompts";
+      let llmInference  = null;
+      let paramsDirty   = false;
+      let lastUserText  = "";
 
-      const CACHE_NAME = "gemma-model-cache-v1";
-      let llmInference = null;
-
-      // ── Slider live-update ────────────────────────────────────────────────
-      sliders.forEach((id) => {
-        const el = document.getElementById(id);
-        const val = document.getElementById(`${id}-val`);
-        el.addEventListener("input", () => {
-          val.textContent = el.value;
+      // ── System prompt local storage ───────────────────────────────────────
+      function loadSysPrompts() {
+        try { return JSON.parse(localStorage.getItem(SYS_STORAGE) || "{}"); } catch { return {}; }
+      }
+      function saveSysPrompts(obj) {
+        localStorage.setItem(SYS_STORAGE, JSON.stringify(obj));
+      }
+      function refreshSysSelect() {
+        const prompts = loadSysPrompts();
+        sysSelect.innerHTML = '<option value="">— Load saved 載入已儲存 —</option>';
+        Object.keys(prompts).forEach(k => {
+          const opt = document.createElement("option");
+          opt.value = k; opt.textContent = k;
+          sysSelect.appendChild(opt);
         });
+      }
+      refreshSysSelect();
+
+      sysSelect.addEventListener("change", () => {
+        if (!sysSelect.value) return;
+        const prompts = loadSysPrompts();
+        sysPromptEl.value = prompts[sysSelect.value] || "";
+      });
+
+      saveSysBtn.addEventListener("click", () => {
+        const name = prompt("Enter a name for this system prompt:\n請輸入此系統提示詞的名稱：");
+        if (!name) return;
+        const prompts = loadSysPrompts();
+        prompts[name] = sysPromptEl.value;
+        saveSysPrompts(prompts);
+        refreshSysSelect();
+        sysSelect.value = name;
+      });
+
+      delSysBtn.addEventListener("click", () => {
+        if (!sysSelect.value) { alert("Please select a saved prompt to delete.\n請先選擇一個已儲存的提示詞。"); return; }
+        const prompts = loadSysPrompts();
+        delete prompts[sysSelect.value];
+        saveSysPrompts(prompts);
+        refreshSysSelect();
+        sysPromptEl.value = "";
+      });
+
+      // ── Params dirty tracking ─────────────────────────────────────────────
+      function markDirty() {
+        paramsDirty = true;
+        applyBanner.classList.remove("hidden");
+        promptInput.disabled = true;
+        sendBtn.disabled = true;
+        regenBtn.disabled = true;
+        reloadBtn.disabled = false;
+        promptInput.classList.add("param-dirty");
+      }
+
+      sliders.forEach(id => {
+        const el  = document.getElementById(id);
+        const val = document.getElementById(`${id}-val`);
+        el.addEventListener("input", () => { val.textContent = el.value; markDirty(); });
       });
 
       function getParams() {
         return {
-          maxTokens: parseInt(document.getElementById("maxTokens").value),
-          topK: parseInt(document.getElementById("topK").value),
-          topP: parseFloat(document.getElementById("topP").value),
+          maxTokens:   parseInt(document.getElementById("maxTokens").value),
+          topK:        parseInt(document.getElementById("topK").value),
+          topP:        parseFloat(document.getElementById("topP").value),
           temperature: parseFloat(document.getElementById("temperature").value),
-          thinking: parseInt(document.getElementById("thinking").value),
+          thinking:    parseInt(document.getElementById("thinking").value),
         };
       }
 
       // ── Status helpers ────────────────────────────────────────────────────
       function setStatus(msg, state = "loading") {
         statusText.textContent = msg;
-        statusDot.className =
-          "inline-block w-3 h-3 rounded-full flex-shrink-0 " +
-          {
-            loading: "bg-yellow-400 animate-pulse",
-            ok: "bg-green-500",
-            error: "bg-red-500",
-          }[state];
+        statusDot.className = "inline-block w-3 h-3 rounded-full flex-shrink-0 " + {
+          loading: "bg-yellow-400 animate-pulse",
+          ok:      "bg-green-500",
+          error:   "bg-red-500",
+        }[state];
       }
 
       // ── Cache check ───────────────────────────────────────────────────────
       async function checkCacheStatus() {
         try {
           const cache = await caches.open(CACHE_NAME);
-          const keys = await cache.keys();
-          const hit = keys.some((r) => r.url.includes(".task"));
-
+          const keys  = await cache.keys();
+          const hit   = keys.some(r => r.url.includes(".task"));
           if (hit) {
-            cacheDetail.innerHTML = `<span class="text-green-600 font-medium">✅ 模型已快取</span><br>
-               <span class="text-slate-400 text-xs">下次載入將直接從本地讀取，無需重新下載。</span>`;
-            cacheBadge.textContent = "已快取";
-            cacheBadge.className =
-              "ml-auto text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700";
+            cacheDetail.innerHTML = `<span class="text-green-600 font-medium">✅ Model cached 已快取</span><br>
+              <span class="text-slate-400 text-xs">Next load will be instant — no re-download needed. 下次載入將直接從本地讀取。</span>`;
+            cacheBadge.textContent = "Cached 已快取";
+            cacheBadge.className = "ml-auto text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700";
           } else {
-            cacheDetail.innerHTML = `<span class="text-amber-600 font-medium">⏳ 尚未快取</span><br>
-               <span class="text-slate-400 text-xs">首次載入需從本地讀取模型檔案並寫入快取。</span>`;
-            cacheBadge.textContent = "未快取";
-            cacheBadge.className =
-              "ml-auto text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700";
+            cacheDetail.innerHTML = `<span class="text-amber-600 font-medium">⏳ Not cached 尚未快取</span><br>
+              <span class="text-slate-400 text-xs">First load will download the model (~2.6 GB). 首次載入需下載模型（約2.6GB）。</span>`;
+            cacheBadge.textContent = "Not cached 未快取";
+            cacheBadge.className = "ml-auto text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700";
           }
           cacheBadge.classList.remove("hidden");
-        } catch {
-          cacheDetail.textContent = "無法存取 Cache API。";
-        }
+        } catch { cacheDetail.textContent = "Cannot access Cache API. 無法存取快取API。"; }
       }
 
       // ── Service Worker ────────────────────────────────────────────────────
       async function registerServiceWorker() {
-        if (!("serviceWorker" in navigator)) {
-          setStatus("你的瀏覽器不支援 Service Worker。", "error");
-          return;
-        }
+        if (!("serviceWorker" in navigator)) { setStatus("Browser does not support Service Worker. 瀏覽器不支援Service Worker。", "error"); return; }
         try {
           await navigator.serviceWorker.register("sw.js");
-          setStatus("Service Worker 運作中，正在檢查快取...");
+          setStatus("Service Worker active. Checking cache… 正在檢查快取…");
           await checkCacheStatus();
-        } catch (e) {
-          setStatus("Service Worker 註冊失敗，模型將不會被快取。", "error");
+        } catch {
+          setStatus("Service Worker registration failed. Model will not be cached. Service Worker 註冊失敗，模型將不會被快取。", "error");
         }
       }
 
       // ── WebGPU check ──────────────────────────────────────────────────────
       async function checkWebGPU() {
-        if (!navigator.gpu)
-          throw new Error(
-            "此瀏覽器不支援 WebGPU。請使用 Chrome 113+ 或 Edge 113+，並確保頁面透過 localhost 或 HTTPS 提供。",
-          );
+        if (!navigator.gpu) throw new Error("WebGPU not supported. Use Chrome 113+ / Edge 113+ over localhost or HTTPS. 此瀏覽器不支援WebGPU，請使用Chrome 113+或Edge 113+。");
         const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter)
-          throw new Error(
-            "找不到 WebGPU 顯示卡介面卡。請確認顯示卡驅動程式已更新，並在 chrome://flags 啟用 WebGPU。",
-          );
+        if (!adapter) throw new Error("No WebGPU adapter found. Update your GPU drivers and enable WebGPU in chrome://flags. 找不到WebGPU顯示卡介面卡。");
+      }
+
+      // ── Fetch with download progress ──────────────────────────────────────
+      async function fetchWithProgress(url) {
+        dlSection.classList.remove("hidden");
+        dlBar.style.width = "0%";
+        dlPercent.textContent = "0%";
+        dlDetail.textContent = "Starting download… 開始下載…";
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const contentLength = res.headers.get("content-length");
+        const total = contentLength ? parseInt(contentLength) : null;
+        const reader = res.body.getReader();
+        const chunks = [];
+        let received = 0;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          if (total) {
+            const pct = Math.round((received / total) * 100);
+            dlBar.style.width = pct + "%";
+            dlPercent.textContent = pct + "%";
+            dlDetail.textContent = `${(received / 1048576).toFixed(1)} MB / ${(total / 1048576).toFixed(1)} MB`;
+          } else {
+            dlDetail.textContent = `${(received / 1048576).toFixed(1)} MB downloaded… 已下載…`;
+          }
+        }
+
+        dlBar.style.width = "100%";
+        dlPercent.textContent = "100%";
+        dlDetail.textContent = "Download complete. Loading model… 下載完成，正在載入模型…";
+
+        const blob = new Blob(chunks);
+        return URL.createObjectURL(blob);
       }
 
       // ── Init model ────────────────────────────────────────────────────────
@@ -390,148 +443,160 @@
         const p = getParams();
         try {
           await checkWebGPU();
-          setStatus(
-            "WebGPU 確認可用，正在載入 AI 模型（首次需下載，請耐心等候）...",
-          );
+          setStatus("WebGPU ready. Loading AI model… 正在載入AI模型（首次需下載，請耐心等候）…");
 
           const genaiWasm = await FilesetResolver.forGenAiTasks(
-            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai/wasm",
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai/wasm"
           );
 
+          // Check cache first — if not cached, download with progress
+          let modelPath = MODEL_URL;
+          try {
+            const cache = await caches.open(CACHE_NAME);
+            const keys  = await cache.keys();
+            const hit   = keys.some(r => r.url.includes(".task"));
+            if (!hit) {
+              modelPath = await fetchWithProgress(MODEL_URL);
+            }
+          } catch { /* fall through to normal load */ }
+
           const options = {
-            baseOptions: { modelAssetPath: MODEL_URL },
-            maxTokens: p.maxTokens,
-            topK: p.topK,
+            baseOptions: { modelAssetPath: modelPath },
+            maxTokens:   p.maxTokens,
+            topK:        p.topK,
             temperature: p.temperature,
-            randomSeed: 101,
+            randomSeed:  101,
           };
           if (p.thinking > 0) options.thinkingBudget = p.thinking;
 
-          llmInference = await LlmInference.createFromOptions(
-            genaiWasm,
-            options,
-          );
+          llmInference = await LlmInference.createFromOptions(genaiWasm, options);
+          dlSection.classList.add("hidden");
 
-          setStatus("✅ 模型已準備就緒，所有運算皆在本地進行！", "ok");
+          setStatus("✅ Model ready — all computation runs locally in your browser! 模型已就緒，所有運算皆在瀏覽器本地進行！", "ok");
+          paramsDirty = false;
+          applyBanner.classList.add("hidden");
           promptInput.disabled = false;
+          promptInput.classList.remove("param-dirty");
           sendBtn.disabled = false;
-          reloadBtn.disabled = false;
+          reloadBtn.disabled = true;
           await checkCacheStatus();
         } catch (error) {
-          console.error("模型載入失敗:", error);
-          setStatus(`❌ 模型載入失敗：${error.message}`, "error");
+          console.error("Model load failed:", error);
+          setStatus(`❌ Model load failed: ${error.message}`, "error");
+          dlSection.classList.add("hidden");
         }
       }
 
       // ── Reload on param change ────────────────────────────────────────────
       reloadBtn.addEventListener("click", async () => {
         promptInput.disabled = true;
-        sendBtn.disabled = true;
-        reloadBtn.disabled = true;
-        if (llmInference) {
-          try {
-            llmInference.close();
-          } catch {}
-          llmInference = null;
-        }
-        setStatus("正在以新參數重新載入模型...");
+        sendBtn.disabled     = true;
+        regenBtn.disabled    = true;
+        reloadBtn.disabled   = true;
+        if (llmInference) { try { llmInference.close(); } catch {} llmInference = null; }
+        setStatus("Reloading model with new parameters… 正在以新參數重新載入模型…");
         await initModel();
       });
 
       // ── Chat ──────────────────────────────────────────────────────────────
-      async function handleSend() {
-        const text = promptInput.value.trim();
-        if (!text || !llmInference) return;
+      async function handleSend(regen = false) {
+        let text = regen ? lastUserText : promptInput.value.trim();
 
-        appendMessage("user", text);
-        promptInput.value = "";
+        if (!text || !llmInference) return;
+        if (!regen) {
+          lastUserText = text;
+          appendMessage("user", text);
+          promptInput.value = "";
+        } else {
+          appendMessage("user", "[🔄 Regenerating… 重新生成…]");
+        }
+
         promptInput.disabled = true;
-        sendBtn.disabled = true;
+        sendBtn.disabled     = true;
+        regenBtn.disabled    = true;
         tpsBar.classList.add("hidden");
 
         const aiMsgEl = appendMessage("ai", "");
         const thinkEl = document.createElement("div");
-        thinkEl.className = "text-xs text-slate-400 italic mb-1 hidden";
+        thinkEl.className = "thinking-block hidden";
         aiMsgEl.prepend(thinkEl);
         const textEl = document.createElement("span");
         aiMsgEl.appendChild(textEl);
 
-        let tokenCount = 0;
-        let thinkTokens = "";
-        let inThink = false;
+        let tokenCount = 0, thinkTokens = "", inThink = false;
         const startTime = performance.now();
 
+        // Build prompt
+        const sys = sysPromptEl.value.trim();
+        let prompt = "";
+        if (sys) prompt += `<|turn>system\n${sys}<turn|>\n`;
+        prompt += `<|turn>user\n${text}<turn|>\n<|turn>model\n`;
+
         try {
-          const formattedPrompt = `<|turn>user\n${text}<turn|>\n<|turn>model\n`;
-          await llmInference.generateResponse(
-            formattedPrompt,
-            (partial, done) => {
-              // Detect <tool_call>…<tool_call> blocks
-              const combined = (textEl.textContent || "") + partial;
-
-              if (!inThink && partial.includes("<think>")) {
-                inThink = true;
-                thinkEl.classList.remove("hidden");
-              }
-              if (inThink) {
-                thinkTokens += partial;
-                const endIdx = thinkTokens.indexOf("</think>");
-                if (endIdx !== -1) {
-                  thinkEl.textContent =
-                    "💭 " +
-                    thinkTokens
-                      .slice(thinkTokens.indexOf("<think>") + 7, endIdx)
-                      .trim();
-                  textEl.textContent = thinkTokens.slice(endIdx + 8);
-                  inThink = false;
-                } else {
-                  thinkEl.textContent =
-                    "💭 " + thinkTokens.replace("<think>", "").trim();
-                }
+          await llmInference.generateResponse(prompt, (partial, done) => {
+            if (!inThink && partial.includes("<think>")) {
+              inThink = true; thinkEl.classList.remove("hidden");
+            }
+            if (inThink) {
+              thinkTokens += partial;
+              const endIdx = thinkTokens.indexOf("</think>");
+              if (endIdx !== -1) {
+                thinkEl.textContent = "💭 " + thinkTokens.slice(thinkTokens.indexOf("<think>") + 7, endIdx).trim();
+                textEl.textContent  = thinkTokens.slice(endIdx + 8);
+                inThink = false;
               } else {
-                textEl.textContent += partial;
+                thinkEl.textContent = "💭 " + thinkTokens.replace("<think>", "").trim();
               }
-
-              tokenCount++;
-              chatBox.scrollTop = chatBox.scrollHeight;
-
-              if (done) {
-                const elapsed = (performance.now() - startTime) / 1000;
-                const tps = (tokenCount / elapsed).toFixed(1);
-                tpsValue.textContent = tps;
-                tpsBar.classList.remove("hidden");
-              }
-            },
-          );
+            } else {
+              textEl.textContent += partial;
+            }
+            tokenCount++;
+            chatBox.scrollTop = chatBox.scrollHeight;
+            if (done) {
+              const elapsed = (performance.now() - startTime) / 1000;
+              tpsValue.textContent = (tokenCount / elapsed).toFixed(1);
+              tpsBar.classList.remove("hidden");
+            }
+          });
         } catch (error) {
-          textEl.textContent = "發生錯誤：" + error.message;
+          textEl.textContent = "Error: " + error.message;
         }
 
         promptInput.disabled = false;
-        sendBtn.disabled = false;
+        sendBtn.disabled     = false;
+        regenBtn.disabled    = false;
         promptInput.focus();
       }
 
       function appendMessage(sender, text) {
         const wrap = document.createElement("div");
-        wrap.className =
-          sender === "user"
-            ? "self-end max-w-[80%] bg-indigo-500 text-white rounded-2xl rounded-br-sm px-4 py-2 text-sm whitespace-pre-wrap"
-            : "self-start max-w-[80%] bg-slate-100 text-slate-800 rounded-2xl rounded-bl-sm px-4 py-2 text-sm whitespace-pre-wrap";
+        wrap.className = sender === "user"
+          ? "self-end max-w-[80%] bg-indigo-500 text-white rounded-2xl rounded-br-sm px-4 py-2 text-sm whitespace-pre-wrap"
+          : "self-start max-w-[80%] bg-slate-100 text-slate-800 rounded-2xl rounded-bl-sm px-4 py-2 text-sm whitespace-pre-wrap";
         if (text) wrap.textContent = text;
         chatBox.appendChild(wrap);
         chatBox.scrollTop = chatBox.scrollHeight;
         return wrap;
       }
 
-      // ── Keyboard: Enter sends, Shift+Enter newline ────────────────────────
-      promptInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          handleSend();
-        }
+      // ── Reset ──────────────────────────────────────────────────────────────
+      resetBtn.addEventListener("click", () => {
+        if (!confirm("Clear all messages? This cannot be undone.\n清除所有訊息？此操作無法復原。")) return;
+        chatBox.innerHTML = "";
+        lastUserText = "";
+        promptInput.value = "";
+        tpsBar.classList.add("hidden");
+        regenBtn.disabled = true;
       });
-      sendBtn.addEventListener("click", handleSend);
+
+      // ── Regenerate ────────────────────────────────────────────────────────
+      regenBtn.addEventListener("click", () => handleSend(true));
+
+      // ── Keyboard ──────────────────────────────────────────────────────────
+      promptInput.addEventListener("keydown", e => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(false); }
+      });
+      sendBtn.addEventListener("click", () => handleSend(false));
 
       // ── Boot ──────────────────────────────────────────────────────────────
       await registerServiceWorker();
